@@ -1,0 +1,248 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Silbergrün – Tier-KI</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #e8f5e9;
+      color: #24552c;
+      text-align: center;
+      padding: 18px;
+      margin: 0;
+    }
+
+    main {
+      max-width: 520px;
+      margin: 15px auto;
+      padding: 24px;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 5px 20px #0002;
+    }
+
+    h1 { color: #26733a; }
+
+    input {
+      display: block;
+      width: 100%;
+      margin: 18px 0;
+      padding: 12px;
+      background: #f0f8f0;
+      border: 2px dashed #75a97b;
+      border-radius: 10px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      background: #2e7d32;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: .55;
+      cursor: wait;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 320px;
+      margin: 10px 0;
+      border-radius: 12px;
+    }
+
+    .treffer {
+      text-align: left;
+      background: #f0f8f0;
+      padding: 12px;
+      margin-top: 12px;
+      border-radius: 10px;
+      overflow-wrap: anywhere;
+    }
+
+    .balken {
+      height: 8px;
+      background: #d2e5d4;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .fuellung {
+      height: 100%;
+      background: #39934b;
+    }
+
+    #status { color: #426c49; }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>🐾 Silbergrün</h1>
+    <h3>Tier-Erkennungs-KI</h3>
+    <p>Lade ein Foto von einem Tier hoch und lass die KI es untersuchen.</p>
+
+    <input id="foto" type="file" accept="image/*">
+
+    <div id="vorschau"></div>
+
+    <button id="start" type="button" disabled>
+      🔎 Tier erkennen
+    </button>
+
+    <p id="status">KI wird geladen ...</p>
+    <section id="ergebnis"></section>
+  </main>
+
+  <script>
+    const foto = document.getElementById("foto");
+    const vorschau = document.getElementById("vorschau");
+    const start = document.getElementById("start");
+    const status = document.getElementById("status");
+    const ergebnis = document.getElementById("ergebnis");
+
+    let modell = null;
+    let bild = null;
+    let bildAdresse = null;
+    let beschaeftigt = false;
+
+    function aktualisieren() {
+      start.disabled = !modell || !bild || beschaeftigt;
+    }
+
+    foto.addEventListener("change", () => {
+      bild = null;
+      vorschau.replaceChildren();
+      ergebnis.replaceChildren();
+
+      if (bildAdresse) {
+        URL.revokeObjectURL(bildAdresse);
+        bildAdresse = null;
+      }
+
+      const datei = foto.files[0];
+
+      if (!datei) {
+        status.textContent = "Wähle ein Tierfoto aus.";
+        aktualisieren();
+        return;
+      }
+
+      if (!datei.type.startsWith("image/")) {
+        status.textContent = "Bitte wähle eine Bilddatei aus.";
+        aktualisieren();
+        return;
+      }
+
+      bildAdresse = URL.createObjectURL(datei);
+
+      const neuesBild = document.createElement("img");
+      neuesBild.alt = "Ausgewähltes Tierfoto";
+
+      neuesBild.onload = () => {
+        bild = neuesBild;
+        status.textContent = modell
+          ? "Foto bereit! Klicke auf Tier erkennen."
+          : "Foto geladen. Die KI wird vorbereitet.";
+        aktualisieren();
+      };
+
+      neuesBild.onerror = () => {
+        status.textContent = "Das Bild konnte nicht geöffnet werden.";
+      };
+
+      neuesBild.src = bildAdresse;
+      vorschau.appendChild(neuesBild);
+    });
+
+    start.addEventListener("click", async () => {
+      if (!modell || !bild || beschaeftigt) return;
+
+      beschaeftigt = true;
+      aktualisieren();
+      ergebnis.replaceChildren();
+      status.textContent = "🐾 Das Tier wird analysiert ...";
+
+      try {
+        const treffer = await modell.classify(bild, 5);
+
+        const titel = document.createElement("h2");
+        titel.textContent = "Mögliche Erkennungen";
+        ergebnis.appendChild(titel);
+
+        treffer.forEach((eintrag, index) => {
+          const karte = document.createElement("div");
+          karte.className = "treffer";
+
+          const name = document.createElement("h3");
+          name.textContent = (index + 1) + ". " + eintrag.className;
+
+          const quote = document.createElement("p");
+          quote.textContent =
+            "Modell-Konfidenz: " +
+            (eintrag.probability * 100).toFixed(1) + "%";
+
+          const balken = document.createElement("div");
+          balken.className = "balken";
+
+          const fuellung = document.createElement("div");
+          fuellung.className = "fuellung";
+          fuellung.style.width =
+            Math.min(100, Math.max(0, eintrag.probability * 100)) + "%";
+
+          balken.appendChild(fuellung);
+          karte.append(name, quote, balken);
+          ergebnis.appendChild(karte);
+        });
+
+        const hinweis = document.createElement("p");
+        hinweis.textContent =
+          "Die KI erkennt allgemeine Bildklassen. Sie kann Tierarten verwechseln und liefert keine garantierte Bestimmung.";
+        ergebnis.appendChild(hinweis);
+
+        status.textContent = "Analyse abgeschlossen!";
+
+      } catch (fehler) {
+        console.error(fehler);
+        status.textContent = "Die Analyse ist fehlgeschlagen.";
+        const meldung = document.createElement("p");
+        meldung.textContent =
+          "Prüfe deine Internetverbindung und lade die Seite neu.";
+        ergebnis.appendChild(meldung);
+      } finally {
+        beschaeftigt = false;
+        aktualisieren();
+      }
+    });
+
+    async function ladeKI() {
+      try {
+        status.textContent = "Tier-KI wird aus dem Internet geladen ...";
+        modell = await mobilenet.load();
+        status.textContent = "KI bereit! Wähle ein Tierfoto aus.";
+        aktualisieren();
+      } catch (fehler) {
+        console.error(fehler);
+        status.textContent =
+          "KI konnte nicht geladen werden. Prüfe deine Internetverbindung.";
+      }
+    }
+
+    ladeKI();
+  </script>
+</body>
+</html>
